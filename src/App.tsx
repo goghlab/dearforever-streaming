@@ -12,7 +12,6 @@ import {
   log,
   StreamMessage,
   ChatResponsePayload,
-  CommandResponsePayload,
 } from './agoraHelper';
 
 const client: RTCClient = AgoraRTC.createClient({
@@ -46,7 +45,7 @@ function App() {
   );
   const [openapiToken, setOpenapiToken] = useState('');
   const [session, setSession] = useState<Session | null>(null);
-  const [api, setApi] = useState<ApiService | null>(null);
+  const [api] = useState<ApiService | null>(null);
   const [languages, setLanguages] = useState<Language[]>([]);
   const [voices, setVoices] = useState<Voice[]>([]);
   const [avatars, setAvatars] = useState<Avatar[]>([]);
@@ -163,7 +162,7 @@ function App() {
     setMessageMap(new Map());
   };
 
-  const onStreamMessage = (uid: UID, body: Uint8Array) => {
+  const onStreamMessage = (_uid: UID, body: Uint8Array) => {
     const msg = new TextDecoder().decode(body);
     const { v, type, mid, pld } = JSON.parse(msg) as StreamMessage;
     
