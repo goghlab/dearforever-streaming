@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react-swc';
 
 export default defineConfig({
   plugins: [react()],
-  base: '/streaming/avatar/', // Match the deployment URL structure
+  base: '/', // Set base path to root
   server: {
     host: '0.0.0.0',
   },
