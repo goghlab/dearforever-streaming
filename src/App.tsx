@@ -22,17 +22,44 @@ const client: RTCClient = AgoraRTC.createClient({
 
 let audioTrack: IMicrophoneAudioTrack | null;
 
-// let uid: UID = 0;
+interface Message {
+  id: string;
+  text: string;
+  isSentByMe: boolean;
+}
 
 function App() {
   const [isJoined, setIsJoined] = useState(false);
+  const [messageMap, setMessageMap] = useState<Map<string, Message>>(new Map());
+  const [messageIds, setMessageIds] = useState<string[]>([]);
+  const [inputMessage, setInputMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [connected, setConnected] = useState(false);
+  const [micEnabled, setMicEnabled] = useState(false);
+  const [modeType, setModeType] = useState(2);
+  const [language, setLanguage] = useState('en');
+  const [voiceId, setVoiceId] = useState('Xb7hH8MSUJpSbSDYk0k2');
+  const [openapiHost, setOpenapiHost] = useState('https://openapi.akool.com');
+  const [avatarId, setAvatarId] = useState('dvp_Tristan_cloth2_1080P');
+  const [avatarVideoUrl, setAvatarVideoUrl] = useState(
+    'https://static.website-files.org/assets/avatar/avatar/streaming_avatar/tristan_10s_silence.mp4'
+  );
+  const [openapiToken, setOpenapiToken] = useState('');
+  const [session, setSession] = useState<Session | null>(null);
+  const [api, setApi] = useState<ApiService | null>(null);
+  const [languages, setLanguages] = useState<Language[]>([]);
+  const [voices, setVoices] = useState<Voice[]>([]);
+  const [avatars, setAvatars] = useState<Avatar[]>([]);
+  const [sessionDuration, setSessionDuration] = useState(10);
+  const [remoteStats, setRemoteStats] = useState<NetworkStats | null>(null);
+  const [useManualAvatarId, setUseManualAvatarId] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Channel management functions
   const joinChannel = async (credentials: Credentials) => {
     const { agora_app_id, agora_channel, agora_token, agora_uid } = credentials;
 
-    if (isJoined) {
-      await leaveChannel();
-    }
+    if (isJoined) await leaveChannel();
 
     client.on('exception', onException);
     client.on('user-published', onUserPublish);
@@ -43,12 +70,10 @@ function App() {
     await client.join(agora_app_id, agora_channel, agora_token, agora_uid);
 
     client.on('network-quality', (stats: NetworkQuality) => {
-      // Update remote stats
       const videoStats = client.getRemoteVideoStats();
       const audioStats = client.getRemoteAudioStats();
       const networkStats = client.getRemoteNetworkQuality();
 
-      // Get the first remote user's stats
       const firstVideoStats = Object.values(videoStats)[0] || {};
       const firstAudioStats = Object.values(audioStats)[0] || {};
       const firstNetworkStats = Object.values(networkStats)[0] || {};
@@ -64,38 +89,26 @@ function App() {
     setIsJoined(true);
   };
 
-  const onException = (e: { code: number; msg: string; uid: UID }) => {
-    log(e);
+  const leaveChannel = async () => {
+    setIsJoined(false);
+    if (audioTrack) {
+      await client.unpublish(audioTrack);
+      audioTrack = null;
+    }
+    await client.unpublish();
+    await client.leave();
+    client.removeAllListeners();
   };
 
-  const onTokenWillExpire = () => {
-    alert('Session will expire in 30s');
-  };
-
+  // Event handlers
+  const onException = (e: { code: number; msg: string; uid: UID }) => log(e);
+  const onTokenWillExpire = () => alert('Session will expire in 30s');
   const onTokenDidExpire = () => {
     alert('Session expired');
     closeStreaming();
   };
 
-  const leaveChannel = async () => {
-    setIsJoined(false);
-
-    if (audioTrack) {
-      await client.unpublish(audioTrack);
-      audioTrack = null;
-    }
-
-    await client.unpublish();
-    await client.leave();
-
-    client.removeAllListeners('network-quality');
-    client.removeAllListeners('exception');
-    client.removeAllListeners('user-published');
-    client.removeAllListeners('user-unpublished');
-    client.removeAllListeners('token-privilege-will-expire');
-    client.removeAllListeners('token-privilege-did-expire');
-  };
-
+  // User publish/unpublish handlers
   const onUserPublish = async (user: IAgoraRTCRemoteUser, mediaType: 'video' | 'audio' | 'datachannel') => {
     log('onUserPublish', user, mediaType);
     if (mediaType === 'video') {
@@ -112,92 +125,7 @@ function App() {
     await client.unsubscribe(user, mediaType);
   };
 
-  interface Message {
-    id: string;
-    text: string;
-    isSentByMe: boolean;
-  }
-
-  const [messageMap, setMessageMap] = useState<Map<string, Message>>(new Map());
-  const [messageIds, setMessageIds] = useState<string[]>([]);
-  const [inputMessage, setInputMessage] = useState('');
-  const [sending, setSending] = useState(false);
-  const [connected, setConnected] = useState(false);
-  const [micEnabled, setMicEnabled] = useState(false);
-
-  const [modeType, setModeType] = useState(2);
-  const [language, setLanguage] = useState('en');
-  const [voiceId, setVoiceId] = useState('Xb7hH8MSUJpSbSDYk0k2');
-
-  const [openapiHost, setOpenapiHost] = useState('https://openapi.akool.com');
-  const [avatarId, setAvatarId] = useState('dvp_Tristan_cloth2_1080P');
-  const [avatarVideoUrl, setAvatarVideoUrl] = useState(
-    'https://static.website-files.org/assets/avatar/avatar/streaming_avatar/tristan_10s_silence.mp4',
-  );
-  const [openapiToken, setOpenapiToken] = useState('');
-
-  const [session, setSession] = useState<Session | null>(null);
-  const [api, setApi] = useState<ApiService | null>();
-
-  useEffect(() => {
-    if (openapiHost && openapiToken) {
-      const apiService = new ApiService(openapiHost, openapiToken);
-      setApi(apiService);
-    } else {
-      setApi(null);
-    }
-  }, [openapiHost, openapiToken]);
-
-  const [languages, setLanguages] = useState<Language[]>([]);
-  const [voices, setVoices] = useState<Voice[]>([]);
-  const [avatars, setAvatars] = useState<Avatar[]>([]);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!api) {
-        return;
-      }
-      try {
-        const [langList, voiceList, avatarList] = await Promise.all([
-          api.getLangList(),
-          api.getVoiceList(),
-          api.getAvatarList(),
-        ]);
-        setLanguages(langList);
-        setVoices(voiceList);
-        setAvatars(avatarList);
-      } catch (error) {
-        console.error('Error fetching language and voice data:', error);
-      }
-    };
-
-    fetchData();
-  }, [api]);
-
-  useEffect(() => {
-    if (connected) {
-      setAvatarParams(client, {
-        vid: voiceId,
-        lang: language,
-        mode: modeType,
-      }).catch((error) => {
-        console.error('Failed to update avatar params:', error);
-      });
-    }
-  }, [connected, language, voiceId, modeType]);
-
-  useEffect(() => {
-    if (avatarId) {
-      const avatar = avatars.find((a) => a.avatar_id === avatarId);
-      if (avatar) {
-        log('update avatar video url', avatar.url);
-        setAvatarVideoUrl(avatar.url);
-      }
-    }
-  }, [avatarId, avatars]);
-
-  const [sessionDuration, setSessionDuration] = useState(10);
-
+  // Session management
   const startStreaming = async () => {
     if (!api) {
       alert('Please set host and token first');
@@ -208,40 +136,27 @@ function App() {
       avatar_id: avatarId,
       duration: sessionDuration * 60,
     });
-    log(data);
+    
     setSession(data);
-
-    const { credentials } = data;
-
-    await joinChannel(credentials);
+    await joinChannel(data.credentials);
     await joinChat();
   };
 
   const closeStreaming = async () => {
     await leaveChat();
     await leaveChannel();
-    if (!session) {
-      log('session not found');
-      return;
-    }
-    await api?.closeSession(session._id);
+    if (session) await api?.closeSession(session._id);
   };
 
+  // Chat functionality
   const joinChat = async () => {
     client.on('stream-message', onStreamMessage);
-
     setConnected(true);
-
-    await setAvatarParams(client, {
-      vid: voiceId,
-      lang: language,
-      mode: modeType,
-    });
+    await setAvatarParams(client, { vid: voiceId, lang: language, mode: modeType });
   };
 
   const leaveChat = async () => {
     client.removeAllListeners('stream-message');
-
     setMicEnabled(false);
     setConnected(false);
     setMessageIds([]);
@@ -250,100 +165,42 @@ function App() {
 
   const onStreamMessage = (uid: UID, body: Uint8Array) => {
     const msg = new TextDecoder().decode(body);
-    log(`stream-message, uid=${uid}, size=${body.length}, msg=${msg}`);
     const { v, type, mid, pld } = JSON.parse(msg) as StreamMessage;
-    if (v !== 2) {
-      log(`unsupported message version, v=${v}`);
-      return;
-    }
+    
+    if (v !== 2) return;
+    
     if (type === 'chat') {
       const { text, from } = pld as ChatResponsePayload;
-      setMessageMap((prev) => {
+      setMessageMap(prev => {
         const msg_id = `${type}_${mid}`;
         const newMap = new Map(prev);
+        
         if (!newMap.has(msg_id)) {
-          const msg = {
-            id: msg_id,
-            text,
-            isSentByMe: from === 'user',
-          };
-          newMap.set(msg_id, msg);
-          setMessageIds((prevMessages) => {
-            if (!prevMessages.includes(msg_id)) {
-              return [...prevMessages, msg_id];
-            }
-            return prevMessages;
-          });
+          newMap.set(msg_id, { id: msg_id, text, isSentByMe: from === 'user' });
+          setMessageIds(prevIds => [...prevIds, msg_id]);
         } else {
           const msg = newMap.get(msg_id);
-          if (msg) {
-            msg.text += text;
-            newMap.set(msg_id, msg);
-          }
+          if (msg) msg.text += text;
         }
+        
         return newMap;
       });
-    } else if (type === 'cmd') {
-      const { cmd, code, msg } = pld as CommandResponsePayload;
-      log(`cmd-response, cmd=${cmd}, code=${code}, msg=${msg}`);
-      if (code !== 1000) {
-        alert(`cmd-response, cmd=${cmd}, code=${code}, msg=${msg}`);
-      }
     }
   };
 
+  // UI handlers
   const sendMessage = async () => {
     setSending(true);
-
     const messageId = `msg-${Date.now()}`;
-    const msg = {
+    
+    setMessageIds(prev => [...prev, messageId]);
+    setMessageMap(prev => new Map(prev.set(messageId, {
       id: messageId,
       text: inputMessage,
-      isSentByMe: true,
-    };
-
-    setMessageIds((prevMessages) => [...prevMessages, msg.id]);
-    setMessageMap((prev) => {
-      const newMap = new Map(prev);
-      newMap.set(messageId, msg);
-      return newMap;
-    });
-
-    /*
-      If you need to utilize your own LLM service, perform an HTTP request here.
-      Send the "inputMessage" to your backend and retrieve the response.
-
-      Example:
-      
-      // Set mode to 1 to repeat mode, and you only need to do this once.
-      setAvatarParams(client, {
-        mode: 1,
-      });
-
-      try {
-        const response = await fetch('https://your-backend-host/api/llm/answer', {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            question: inputMessage,
-          }),
-        });
-
-        if (response.ok) {
-          const result = await response.json();
-          inputMessage = result.answer;
-        } else {
-          console.error("Failed to fetch from backend", response.statusText);
-        }
-      } catch (error) {
-        console.error("Error during fetch operation", error);
-      }
-    */
+      isSentByMe: true
+    })));
 
     await sendMessageToAvatar(client, messageId, inputMessage);
-
     setInputMessage('');
     setSending(false);
   };
@@ -365,47 +222,83 @@ function App() {
       audioTrack = null;
       setMicEnabled(false);
     }
-    log(`Microphone is now ${audioTrack ? 'enabled' : 'disabled'}`);
   };
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // Helpers
+  const scrollToBottom = () => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const isImageUrl = (url: string) => /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  useEffect(() => {
+    if (api) {
+      const fetchData = async () => {
+        try {
+          const [langList, voiceList, avatarList] = await Promise.all([
+            api.getLangList(),
+            api.getVoiceList(),
+            api.getAvatarList(),
+          ]);
+          setLanguages(langList);
+          setVoices(voiceList);
+          setAvatars(avatarList);
+        } catch (error) {
+          console.error('Error fetching data:', error);
+        }
+      };
+      fetchData();
+    }
+  }, [api]);
+
+  useEffect(() => {
+    if (connected) {
+      setAvatarParams(client, { vid: voiceId, lang: language, mode: modeType })
+        .catch(console.error);
+    }
+  }, [connected, language, voiceId, modeType]);
+
+  useEffect(() => {
+    if (avatarId) {
+      const avatar = avatars.find(a => a.avatar_id === avatarId);
+      if (avatar) setAvatarVideoUrl(avatar.url);
+    }
+  }, [avatarId, avatars]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messageIds, messageMap]);
 
-  const [remoteStats, setRemoteStats] = useState<NetworkStats | null>(null);
-
-  const [useManualAvatarId, setUseManualAvatarId] = useState(false);
-
-  const isImageUrl = (url: string) => {
-    return /\.(jpg|jpeg|png|gif|webp)$/i.test(url);
-  };
-
   return (
     <>
       <div className="left-side">
-        <h3>AKool Streaming Avatar Demo</h3>
+        <div className="brand-header">
+          <img 
+            src="/logo.png" 
+            alt="Dear Forever Logo" 
+            className="logo"
+          />
+          <h4>Dear Forever Streaming Demo</h4>
+        </div>
+
         <div>
           <label>
             Host:
-            <input defaultValue={openapiHost} onChange={(e) => setOpenapiHost(e.target.value)} />
+            <input 
+              value={openapiHost} 
+              onChange={(e) => setOpenapiHost(e.target.value)} 
+            />
           </label>
         </div>
+
         <div>
           <label>
             Token:
             <input
-              defaultValue={openapiToken}
+              value={openapiToken}
               onChange={(e) => setOpenapiToken(e.target.value)}
-              placeholder="get your token from https://akool.com"
+              placeholder="Get token from https://akool.com"
             />
           </label>
         </div>
+
         <div>
           <label>
             Session Duration (minutes):
@@ -418,21 +311,30 @@ function App() {
             />
           </label>
         </div>
+
         <div>
           <label>
             ModeType:
-            <select value={modeType} onChange={(e) => setModeType(parseInt(e.target.value))}>
+            <select 
+              value={modeType} 
+              onChange={(e) => setModeType(parseInt(e.target.value))}
+            >
               <option value="1">Repeat</option>
               <option value="2">Dialogue</option>
             </select>
           </label>
         </div>
+
         <div>
           <label>
             Avatar:
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="avatar-selector">
               {!useManualAvatarId ? (
-                <select value={avatarId} onChange={(e) => setAvatarId(e.target.value)} disabled={!avatars.length}>
+                <select 
+                  value={avatarId} 
+                  onChange={(e) => setAvatarId(e.target.value)}
+                  disabled={!avatars.length}
+                >
                   <option value="">Select an avatar</option>
                   {avatars.map((avatar, index) => (
                     <option key={index} value={avatar.avatar_id}>
@@ -453,15 +355,22 @@ function App() {
                 className="icon-button"
                 title={useManualAvatarId ? 'Switch to dropdown' : 'Switch to manual input'}
               >
-                <span className="material-icons">{useManualAvatarId ? 'list' : 'edit'}</span>
+                <span className="material-icons">
+                  {useManualAvatarId ? 'list' : 'edit'}
+                </span>
               </button>
             </div>
           </label>
         </div>
+
         <div>
           <label>
             Language:
-            <select value={language} onChange={(e) => setLanguage(e.target.value)} disabled={!languages.length}>
+            <select 
+              value={language} 
+              onChange={(e) => setLanguage(e.target.value)}
+              disabled={!languages.length}
+            >
               <option value="">Select a language</option>
               {languages.map((lang) => (
                 <option key={lang.lang_code} value={lang.lang_code}>
@@ -471,10 +380,15 @@ function App() {
             </select>
           </label>
         </div>
+
         <div>
           <label>
             Voice:
-            <select value={voiceId} onChange={(e) => setVoiceId(e.target.value)} disabled={!voices.length}>
+            <select 
+              value={voiceId} 
+              onChange={(e) => setVoiceId(e.target.value)}
+              disabled={!voices.length}
+            >
               <option value="">Select a voice</option>
               {voices.map((voice, index) => (
                 <option key={index} value={voice.voice_id}>
@@ -484,6 +398,7 @@ function App() {
             </select>
           </label>
         </div>
+
         <div className="buttons">
           {isJoined ? (
             <button onClick={closeStreaming} className="button-off">
@@ -495,8 +410,10 @@ function App() {
             </button>
           )}
         </div>
-        <div>{isJoined && remoteStats && <NetworkQualityDisplay stats={remoteStats} />}</div>
+
+        {isJoined && remoteStats && <NetworkQualityDisplay stats={remoteStats} />}
       </div>
+
       <div className="right-side">
         <div className="video-container">
           {isImageUrl(avatarVideoUrl) ? (
@@ -520,18 +437,23 @@ function App() {
           )}
           <video id="remote-video"></video>
         </div>
+
         <div className="chat-window">
           <div className="chat-messages">
-            {messageIds.map((id: string, index: number) => {
+            {messageIds.map((id, index) => {
               const message = messageMap.get(id)!;
               return (
-                <div key={index} className={`chat-message ${message.isSentByMe ? 'sent' : 'received'}`}>
+                <div 
+                  key={index} 
+                  className={`chat-message ${message.isSentByMe ? 'sent' : 'received'}`}
+                >
                   {message.text}
                 </div>
               );
             })}
             <div ref={messagesEndRef} />
           </div>
+
           <div className="chat-input">
             <button
               onClick={toggleMic}
@@ -539,13 +461,16 @@ function App() {
               className={`icon-button ${sending || !connected ? 'disabled' : ''}`}
               title={micEnabled ? 'Disable microphone' : 'Enable microphone'}
             >
-              <span className="material-icons">{micEnabled ? 'mic' : 'mic_off'}</span>
+              <span className="material-icons">
+                {micEnabled ? 'mic' : 'mic_off'}
+              </span>
             </button>
+
             {!micEnabled && (
               <>
                 <input
                   type="text"
-                  placeholder={'Type a message...'}
+                  placeholder="Type a message..."
                   disabled={sending || !connected}
                   className={sending || !connected ? 'disabled' : ''}
                   value={inputMessage}
